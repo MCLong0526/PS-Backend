@@ -31,6 +31,13 @@ public class User {
 
     private String referralCode;
 
+    private String role;
+
+    private Long invitedBy;
+
+    @Column(nullable = false)
+    private String status = "ACTIVE";
+
     private LocalDateTime createTime;
 
     private String createBy;
@@ -101,6 +108,22 @@ public class User {
 
     public void setReferralCode(String referralCode) {
         this.referralCode = referralCode;
+    }
+
+    public String getRole() {
+        return role;
+    }
+
+    public void setRole(String role) {
+        this.role = role;
+    }
+
+    public Long getInvitedBy() {
+        return invitedBy;
+    }
+
+    public void setInvitedBy(Long invitedBy) {
+        this.invitedBy = invitedBy;
     }
 
     public LocalDateTime getCreateTime() {

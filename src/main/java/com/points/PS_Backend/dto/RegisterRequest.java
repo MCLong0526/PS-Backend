@@ -21,4 +21,6 @@ public class RegisterRequest {
     @NotBlank(message = "Password cannot be empty")
     @Size(min = 6, message = "Password must be at least 6 characters")
     private String password;
+
+    private String referralCode;
 }

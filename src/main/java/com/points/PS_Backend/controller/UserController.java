@@ -8,6 +8,7 @@ import com.points.PS_Backend.service.UserService;
 import com.points.PS_Backend.utils.JwtUtil;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -81,5 +82,26 @@ public class UserController {
                 null,
                 null
         );
+    }
+
+    @GetMapping("/my-qr")
+    public ResponseEntity<byte[]> getReferralQr(HttpServletRequest request) {
+
+        String header = request.getHeader("Authorization");
+
+        if (header == null || !header.startsWith("Bearer ")) {
+            throw new RuntimeException("Missing token");
+        }
+
+        String token = header.substring(7);
+
+        Long userId = JwtUtil.getUserIdFromToken(token);
+
+        byte[] qr = userService.generateReferralQr(userId);
+
+        return ResponseEntity
+                .ok()
+                .header("Content-Type", "image/png")
+                .body(qr);
     }
 }
