@@ -5,6 +5,8 @@ import com.points.PS_Backend.dto.LoginRequest;
 import com.points.PS_Backend.dto.RegisterRequest;
 import com.points.PS_Backend.model.User;
 import com.points.PS_Backend.service.UserService;
+import com.points.PS_Backend.utils.JwtUtil;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
 
@@ -44,6 +46,40 @@ public class UserController {
                 "success",
                 null,
                 token
+        );
+    }
+
+    @GetMapping("/me")
+    public ApiResponse getCurrentUser(HttpServletRequest request) {
+
+        String header = request.getHeader("Authorization");
+
+        if (header == null || !header.startsWith("Bearer ")) {
+            throw new RuntimeException("Missing token");
+        }
+
+        String token = header.substring(7);
+
+        Long userId = JwtUtil.getUserIdFromToken(token);
+
+        User user = userService.getUserById(userId);
+
+        return new ApiResponse(
+                200,
+                "success",
+                user,
+                null
+        );
+    }
+
+    @PostMapping("/logout")
+    public ApiResponse logout() {
+
+        return new ApiResponse(
+                200,
+                "Logout success",
+                null,
+                null
         );
     }
 }
