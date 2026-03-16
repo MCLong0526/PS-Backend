@@ -35,8 +35,5 @@ public class WalletService {
         walletLogRepository.save(log);
     }
 
-    public List<WalletLog> getUserWalletLogs(Long userId){
-        return walletLogRepository.findByUserIdOrderByCreateTimeDesc(userId);
-    }
 
 }

@@ -64,7 +64,6 @@ public class UserService {
         user.setStatus("ACTIVE");
 
         // Handle referral
-        // Handle referral
         if(request.getReferralCode() != null){
 
             User inviter = userRepository

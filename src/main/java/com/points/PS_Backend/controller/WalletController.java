@@ -1,15 +1,16 @@
 package com.points.PS_Backend.controller;
 
 import com.points.PS_Backend.dto.ApiResponse;
-import com.points.PS_Backend.dto.WalletLogResponse;
 import com.points.PS_Backend.model.WalletLog;
 import com.points.PS_Backend.repository.WalletLogRepository;
 import com.points.PS_Backend.utils.JwtUtil;
 import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
-import java.util.stream.Collectors;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 
 @RestController
 @RequestMapping("/api/wallet")
@@ -21,9 +22,6 @@ public class WalletController {
         this.walletLogRepository = walletLogRepository;
     }
 
-    /**
-     * Extract JWT token from Authorization header
-     */
     private String extractToken(HttpServletRequest request){
 
         String header = request.getHeader("Authorization");
@@ -35,37 +33,43 @@ public class WalletController {
         return header.substring(7);
     }
 
-    /**
-     * USER - Get own wallet history
-     */
     @GetMapping("/history")
-    public ApiResponse getWalletHistory(HttpServletRequest request){
+    public ApiResponse getWalletHistory(
+            HttpServletRequest request,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(required = false) String startDate,
+            @RequestParam(required = false) String endDate){
 
         String token = extractToken(request);
 
         Long userId = JwtUtil.getUserIdFromToken(token);
 
-        List<WalletLog> logs =
-                walletLogRepository.findByUserIdOrderByCreateTimeDesc(userId);
+        Pageable pageable = PageRequest.of(page, size);
 
-        // Convert entity -> DTO
-        List<WalletLogResponse> response = logs.stream().map(log -> {
+        LocalDateTime start;
+        LocalDateTime end;
 
-            WalletLogResponse dto = new WalletLogResponse();
+        if(startDate != null && endDate != null){
+            start = LocalDate.parse(startDate).atStartOfDay();
+            end = LocalDate.parse(endDate).atTime(23,59,59);
+        }else{
+            start = LocalDate.of(2000,1,1).atStartOfDay();
+            end = LocalDate.now().atTime(23,59,59);
+        }
 
-            dto.setAmount(log.getAmount());
-            dto.setType(log.getType());
-            dto.setDescription(log.getDescription());
-            dto.setCreateTime(log.getCreateTime());
-
-            return dto;
-
-        }).collect(Collectors.toList());
+        var history = walletLogRepository
+                .findByUserIdAndCreateTimeBetweenOrderByCreateTimeDesc(
+                        userId,
+                        start,
+                        end,
+                        pageable
+                );
 
         return new ApiResponse(
                 200,
                 "success",
-                response,
+                history,
                 null
         );
     }

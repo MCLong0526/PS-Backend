@@ -2,12 +2,21 @@ package com.points.PS_Backend.controller;
 
 import com.points.PS_Backend.dto.ApiResponse;
 import com.points.PS_Backend.dto.RegisterRequest;
+import com.points.PS_Backend.model.PaymentSetting;
 import com.points.PS_Backend.model.User;
+import com.points.PS_Backend.repository.PaymentSettingRepository;
 import com.points.PS_Backend.repository.WalletLogRepository;
 import com.points.PS_Backend.service.UserService;
 import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.File;
+import java.io.IOException;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 
 @RestController
@@ -15,11 +24,14 @@ import java.util.List;
 public class AdminUserController {
 
     private final UserService userService;
+    private final PaymentSettingRepository paymentSettingRepository;
     private final WalletLogRepository walletLogRepository;
 
     public AdminUserController(UserService userService,
+                               PaymentSettingRepository paymentSettingRepository,
                                WalletLogRepository walletLogRepository){
         this.userService = userService;
+        this.paymentSettingRepository = paymentSettingRepository;
         this.walletLogRepository = walletLogRepository;
     }
 
@@ -56,6 +68,48 @@ public class AdminUserController {
         );
     }
 
+    @GetMapping("/{id}/wallet")
+    public ApiResponse getUserWalletLogs(
+            @PathVariable Long id,
+            HttpServletRequest request,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(required = false) String startDate,
+            @RequestParam(required = false) String endDate){
+
+        String token = extractToken(request);
+
+        userService.validateAdmin(token);
+
+        Pageable pageable = PageRequest.of(page, size);
+
+        LocalDateTime start;
+        LocalDateTime end;
+
+        if(startDate != null && endDate != null){
+            start = LocalDate.parse(startDate).atStartOfDay();
+            end = LocalDate.parse(endDate).atTime(23,59,59);
+        }else{
+            start = LocalDate.of(2000,1,1).atStartOfDay();
+            end = LocalDate.now().atTime(23,59,59);
+        }
+
+        var logs = walletLogRepository
+                .findByUserIdAndCreateTimeBetweenOrderByCreateTimeDesc(
+                        id,
+                        start,
+                        end,
+                        pageable
+                );
+
+        return new ApiResponse(
+                200,
+                "success",
+                logs,
+                null
+        );
+    }
+
     // GET USER DETAIL
     @GetMapping("/{id}")
     public ApiResponse getUser(
@@ -79,14 +133,14 @@ public class AdminUserController {
     // CREATE USER
     @PostMapping
     public ApiResponse createUser(
-            @RequestBody RegisterRequest request,
-            HttpServletRequest httpRequest){
+            @RequestBody RegisterRequest body,
+            HttpServletRequest request){
 
-        String token = extractToken(httpRequest);
+        String token = extractToken(request);
 
         userService.validateAdmin(token);
 
-        userService.register(request);
+        userService.register(body);
 
         return new ApiResponse(
                 200,
@@ -137,21 +191,84 @@ public class AdminUserController {
         );
     }
 
-    @GetMapping("/{id}/wallet")
-    public ApiResponse getUserWalletLogs(
-            @PathVariable Long id,
+
+
+    @PutMapping("/settings")
+    public ApiResponse updatePaymentSettings(
+            @RequestBody PaymentSetting setting,
             HttpServletRequest request){
 
         String token = extractToken(request);
-
         userService.validateAdmin(token);
 
-        var logs = walletLogRepository.findByUserIdOrderByCreateTimeDesc(id);
+        PaymentSetting existing = paymentSettingRepository
+                .findById(1L)
+                .orElse(null);
+
+        if(existing == null){
+            existing = new PaymentSetting();
+        }
+
+        existing.setBankName(setting.getBankName());
+        existing.setAccountName(setting.getAccountName());
+        existing.setAccountNumber(setting.getAccountNumber());
+        existing.setQrCodeUrl(setting.getQrCodeUrl());
+        existing.setUpdateTime(LocalDateTime.now());
+
+        paymentSettingRepository.save(existing);
+
+        return new ApiResponse(200,"Payment settings updated",existing,null);
+    }
+
+    @GetMapping("/payment-settings")
+    public ApiResponse getPaymentSettings(HttpServletRequest request){
+
+        String token = extractToken(request);
+        userService.validateAdmin(token);
+
+        PaymentSetting setting = paymentSettingRepository
+                .findById(1L)
+                .orElse(null);
+
+        return new ApiResponse(200,"success",setting,null);
+    }
+
+    @PostMapping("/payment-qr")
+    public ApiResponse uploadQrCode(
+            @RequestParam("file") MultipartFile file,
+            HttpServletRequest request) throws IOException {
+
+        String token = extractToken(request);
+        userService.validateAdmin(token);
+
+        String uploadDir = System.getProperty("user.dir") + "/uploads/payment/";
+
+        File dir = new File(uploadDir);
+        if (!dir.exists()) {
+            dir.mkdirs();
+        }
+
+        String filename = System.currentTimeMillis() + "_" + file.getOriginalFilename();
+        File dest = new File(uploadDir + filename);
+
+        file.transferTo(dest);
+
+        String url = "/uploads/payment/" + filename;
+
+        // 🔹 Save QR URL into payment setting
+        PaymentSetting setting = paymentSettingRepository
+                .findById(1L)
+                .orElse(new PaymentSetting());
+
+        setting.setQrCodeUrl(url);
+        setting.setUpdateTime(LocalDateTime.now());
+
+        paymentSettingRepository.save(setting);
 
         return new ApiResponse(
                 200,
-                "success",
-                logs,
+                "Upload success",
+                url,
                 null
         );
     }
