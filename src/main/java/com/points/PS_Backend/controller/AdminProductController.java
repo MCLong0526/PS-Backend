@@ -1,14 +1,17 @@
 package com.points.PS_Backend.controller;
 
 import com.points.PS_Backend.dto.ApiResponse;
+import com.points.PS_Backend.dto.CreateLuckyDrawRequest;
 import com.points.PS_Backend.dto.RequestResponse;
 import com.points.PS_Backend.model.Product;
 import com.points.PS_Backend.model.ProductImage;
 import com.points.PS_Backend.model.Request;
+import com.points.PS_Backend.model.LuckyDrawItem;
 import com.points.PS_Backend.repository.*;
 import com.points.PS_Backend.service.UserService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -26,13 +29,15 @@ public class AdminProductController {
     private final UserService userService;
     private final UserRepository userRepository;
     private final UserAddressRepository userAddressRepository;
+    private final LuckyDrawItemRepository luckyDrawItemRepository;
 
     public AdminProductController(ProductRepository productRepository,
                                   RequestRepository requestRepository,
                                   ProductImageRepository productImageRepository,
                                   UserService userService,
                                   UserRepository userRepository,
-                                  UserAddressRepository userAddressRepository) {
+                                  UserAddressRepository userAddressRepository,
+                                  LuckyDrawItemRepository luckyDrawItemRepository) {
 
         this.productRepository = productRepository;
         this.requestRepository = requestRepository;
@@ -40,6 +45,7 @@ public class AdminProductController {
         this.userService = userService;
         this.userRepository = userRepository;
         this.userAddressRepository = userAddressRepository;
+        this.luckyDrawItemRepository = luckyDrawItemRepository;
     }
 
     private String extractToken(HttpServletRequest request){
@@ -53,22 +59,90 @@ public class AdminProductController {
         return header.substring(7);
     }
 
-    // CREATE PRODUCT
+//    // CREATE PRODUCT
+//    @PostMapping
+//    public ApiResponse createProduct(
+//            @RequestBody Product product,
+//            HttpServletRequest request){
+//
+//        String token = extractToken(request);
+//
+//        userService.validateAdmin(token);
+//
+//        // ✅ validate product type
+//        if(product.getProductType() == null ||
+//                (!"NORMAL".equals(product.getProductType()) &&
+//                        !"LUCKY_DRAW".equals(product.getProductType()))){
+//            throw new RuntimeException("Invalid product type");
+//        }
+//
+//        product.setCreateTime(LocalDateTime.now());
+//        product.setStatus("ACTIVE");
+//
+//        productRepository.save(product);
+//
+//        return new ApiResponse(200,"Product created",null,null);
+//    }
+
     @PostMapping
+    @Transactional
     public ApiResponse createProduct(
-            @RequestBody Product product,
+            @RequestBody CreateLuckyDrawRequest dto,
             HttpServletRequest request){
 
         String token = extractToken(request);
-
         userService.validateAdmin(token);
 
-        product.setCreateTime(LocalDateTime.now());
+        if(dto.getProductType() == null ||
+                (!"NORMAL".equals(dto.getProductType()) &&
+                        !"LUCKY_DRAW".equals(dto.getProductType()))){
+            throw new RuntimeException("Invalid product type");
+        }
+
+        // ================= CREATE PRODUCT =================
+        Product product = new Product();
+        product.setName(dto.getName());
+        product.setDescription(dto.getDescription());
+        product.setPriceWallet(dto.getPriceWallet());
+        product.setPricePoints(dto.getPricePoints());
+        product.setQuantity(dto.getQuantity());
+        product.setProductType(dto.getProductType());
         product.setStatus("ACTIVE");
+        product.setCreateTime(LocalDateTime.now());
 
         productRepository.save(product);
 
-        return new ApiResponse(200,"Product created",null,null);
+        // ================= CREATE REWARDS =================
+        if("LUCKY_DRAW".equals(dto.getProductType())){
+
+            if(dto.getRewards() == null || dto.getRewards().isEmpty()){
+                throw new RuntimeException("Lucky draw must have at least 1 reward");
+            }
+
+            for(CreateLuckyDrawRequest.RewardItem r : dto.getRewards()){
+
+                if(r.getWeight() == null || r.getWeight() <= 0){
+                    throw new RuntimeException("Weight must be greater than 0");
+                }
+
+                Product rewardProduct = productRepository.findById(r.getRewardProductId())
+                        .orElseThrow(() -> new RuntimeException("Reward product not found"));
+
+                if("LUCKY_DRAW".equals(rewardProduct.getProductType())){
+                    throw new RuntimeException("Cannot use lucky draw as reward");
+                }
+
+                LuckyDrawItem item = new LuckyDrawItem();
+                item.setLuckyDrawProductId(product.getId());
+                item.setRewardProductId(r.getRewardProductId());
+                item.setWeight(r.getWeight());
+                item.setCreateTime(LocalDateTime.now());
+
+                luckyDrawItemRepository.save(item);
+            }
+        }
+
+        return new ApiResponse(200, "Product created", product, null);
     }
 
     // UPDATE PRODUCT
@@ -85,11 +159,19 @@ public class AdminProductController {
         Product p = productRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Product not found"));
 
+        // ✅ validate product type
+        if(product.getProductType() == null ||
+                (!"NORMAL".equals(product.getProductType()) &&
+                        !"LUCKY_DRAW".equals(product.getProductType()))){
+            throw new RuntimeException("Invalid product type");
+        }
+
         p.setName(product.getName());
         p.setDescription(product.getDescription());
         p.setPriceWallet(product.getPriceWallet());
         p.setPricePoints(product.getPricePoints());
         p.setQuantity(product.getQuantity());
+        p.setProductType(product.getProductType()); // ✅ important
         p.setUpdateTime(LocalDateTime.now());
 
         productRepository.save(p);
@@ -306,6 +388,111 @@ public class AdminProductController {
                 null,
                 null
         );
+    }
+
+
+    @PostMapping("/{productId}/lucky-draw-items")
+    public ApiResponse addLuckyDrawItem(
+            @PathVariable Long productId,
+            @RequestParam Long rewardProductId,
+            @RequestParam Integer weight,
+            HttpServletRequest request){
+
+        String token = extractToken(request);
+        userService.validateAdmin(token);
+
+        Product luckyDrawProduct = productRepository.findById(productId)
+                .orElseThrow(() -> new RuntimeException("Lucky draw product not found"));
+
+        if(!"LUCKY_DRAW".equals(luckyDrawProduct.getProductType())){
+            throw new RuntimeException("This product is not a lucky draw");
+        }
+
+        Product rewardProduct = productRepository.findById(rewardProductId)
+                .orElseThrow(() -> new RuntimeException("Reward product not found"));
+
+        if(weight == null || weight <= 0){
+            throw new RuntimeException("Weight must be greater than 0");
+        }
+
+        boolean exists = luckyDrawItemRepository
+                .existsByLuckyDrawProductIdAndRewardProductId(productId, rewardProductId);
+
+        if(exists){
+            throw new RuntimeException("Reward product already added into this lucky draw");
+        }
+
+        LuckyDrawItem item = new LuckyDrawItem();
+        item.setLuckyDrawProductId(productId);
+        item.setRewardProductId(rewardProductId);
+        item.setWeight(weight);
+        item.setCreateTime(LocalDateTime.now());
+
+        luckyDrawItemRepository.save(item);
+
+        return new ApiResponse(200, "Lucky draw item added", item, null);
+    }
+
+    @GetMapping("/{productId}/lucky-draw-items")
+    public ApiResponse getLuckyDrawItems(
+            @PathVariable Long productId,
+            HttpServletRequest request){
+
+        String token = extractToken(request);
+        userService.validateAdmin(token);
+
+        Product luckyDrawProduct = productRepository.findById(productId)
+                .orElseThrow(() -> new RuntimeException("Lucky draw product not found"));
+
+        if(!"LUCKY_DRAW".equals(luckyDrawProduct.getProductType())){
+            throw new RuntimeException("This product is not a lucky draw");
+        }
+
+        var items = luckyDrawItemRepository.findByLuckyDrawProductId(productId);
+
+        return new ApiResponse(200, "success", items, null);
+    }
+
+
+    @PutMapping("/lucky-draw-items/{itemId}")
+    public ApiResponse updateLuckyDrawItem(
+            @PathVariable Long itemId,
+            @RequestParam Integer weight,
+            HttpServletRequest request){
+
+        String token = extractToken(request);
+        userService.validateAdmin(token);
+
+        LuckyDrawItem item = luckyDrawItemRepository.findById(itemId)
+                .orElseThrow(() -> new RuntimeException("Lucky draw item not found"));
+
+        if(weight == null || weight <= 0){
+            throw new RuntimeException("Weight must be greater than 0");
+        }
+
+        item.setWeight(weight);
+        item.setUpdateTime(LocalDateTime.now());
+
+        luckyDrawItemRepository.save(item);
+
+        return new ApiResponse(200, "Lucky draw item updated", item, null);
+    }
+
+
+    @DeleteMapping("/lucky-draw-items/{itemId}")
+    public ApiResponse deleteLuckyDrawItem(
+            @PathVariable Long itemId,
+            HttpServletRequest request){
+
+        String token = extractToken(request);
+        userService.validateAdmin(token);
+
+        LuckyDrawItem item = luckyDrawItemRepository.findById(itemId)
+                .orElseThrow(() -> new RuntimeException("Lucky draw item not found"));
+
+        luckyDrawItemRepository.delete(item);
+
+        return new ApiResponse(200, "Lucky draw item deleted", null, null);
     }
 
 }

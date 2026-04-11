@@ -32,6 +32,90 @@ public class UserService {
         this.walletService = walletService;
     }
 
+//    public void register(RegisterRequest request) {
+//
+//        if(userRepository.existsByEmail(request.getEmail())){
+//            throw new RuntimeException("Email already registered");
+//        }
+//
+//        if(userRepository.existsByPhone(request.getPhone())){
+//            throw new RuntimeException("Phone already registered");
+//        }
+//
+//        User user = new User();
+//
+//        user.setUsername(request.getUsername());
+//        user.setEmail(request.getEmail());
+//        user.setPhone(request.getPhone());
+//
+//        user.setPassword(
+//                PasswordUtil.hashPassword(request.getPassword())
+//        );
+//
+//        user.setRole("CUSTOMER");
+//
+//        user.setReferralCode(
+//                ReferralUtil.generateCode()
+//        );
+//
+//        user.setPoints(0);
+//        user.setWallet(BigDecimal.ZERO);
+//        user.setCreateTime(LocalDateTime.now());
+//        user.setStatus("ACTIVE");
+//
+//        // Handle referral
+//        if(request.getReferralCode() != null){
+//
+//            User inviter = userRepository
+//                    .findByReferralCode(request.getReferralCode())
+//                    .orElseThrow(() -> new RuntimeException("Invalid referral code"));
+//
+//            user.setInvitedBy(inviter.getId());
+//
+//            // Level 1 reward
+//            inviter.setWallet(
+//                    inviter.getWallet().add(LEVEL1_REWARD)
+//            );
+//
+//            walletService.recordTransaction(
+//                    inviter.getId(),
+//                    LEVEL1_REWARD,
+//                    "REFERRAL_LEVEL1",
+//                    "Referral reward",
+//                    user.getId()
+//            );
+//
+//            userRepository.save(inviter);
+//
+//            // Level 2 reward
+//            if(inviter.getInvitedBy() != null){
+//
+//                User level2 = userRepository
+//                        .findById(inviter.getInvitedBy())
+//                        .orElse(null);
+//
+//                if(level2 != null){
+//
+//                    level2.setWallet(
+//                            level2.getWallet().add(LEVEL2_REWARD)
+//                    );
+//
+//                    userRepository.save(level2);
+//
+//                    walletService.recordTransaction(
+//                            level2.getId(),
+//                            LEVEL2_REWARD,
+//                            "REFERRAL_LEVEL2",
+//                            "Referral reward",
+//                            user.getId()
+//                    );
+//                }
+//            }
+//        }
+//
+//        userRepository.save(user);
+//    }
+
     public void register(RegisterRequest request) {
 
         if(userRepository.existsByEmail(request.getEmail())){
@@ -43,39 +127,39 @@ public class UserService {
         }
 
         User user = new User();
-
         user.setUsername(request.getUsername());
         user.setEmail(request.getEmail());
         user.setPhone(request.getPhone());
-
-        user.setPassword(
-                PasswordUtil.hashPassword(request.getPassword())
-        );
-
+        user.setPassword(PasswordUtil.hashPassword(request.getPassword()));
         user.setRole("CUSTOMER");
-
-        user.setReferralCode(
-                ReferralUtil.generateCode()
-        );
-
+        user.setReferralCode(ReferralUtil.generateCode());
         user.setPoints(0);
         user.setWallet(BigDecimal.ZERO);
         user.setCreateTime(LocalDateTime.now());
         user.setStatus("ACTIVE");
 
-        // Handle referral
-        if(request.getReferralCode() != null){
+        // if referral code exists, set invitedBy first
+        User inviter = null;
+        User level2 = null;
 
-            User inviter = userRepository
-                    .findByReferralCode(request.getReferralCode())
+        if(request.getReferralCode() != null && !request.getReferralCode().isBlank()) {
+            inviter = userRepository.findByReferralCode(request.getReferralCode())
                     .orElseThrow(() -> new RuntimeException("Invalid referral code"));
 
             user.setInvitedBy(inviter.getId());
 
-            // Level 1 reward
-            inviter.setWallet(
-                    inviter.getWallet().add(LEVEL1_REWARD)
-            );
+            if(inviter.getInvitedBy() != null) {
+                level2 = userRepository.findById(inviter.getInvitedBy()).orElse(null);
+            }
+        }
+
+        // save user first so user.getId() is no longer null
+        userRepository.save(user);
+
+        // now process referral rewards
+        if(inviter != null) {
+            inviter.setWallet(inviter.getWallet().add(LEVEL1_REWARD));
+            userRepository.save(inviter);
 
             walletService.recordTransaction(
                     inviter.getId(),
@@ -85,35 +169,19 @@ public class UserService {
                     user.getId()
             );
 
-            userRepository.save(inviter);
+            if(level2 != null) {
+                level2.setWallet(level2.getWallet().add(LEVEL2_REWARD));
+                userRepository.save(level2);
 
-            // Level 2 reward
-            if(inviter.getInvitedBy() != null){
-
-                User level2 = userRepository
-                        .findById(inviter.getInvitedBy())
-                        .orElse(null);
-
-                if(level2 != null){
-
-                    level2.setWallet(
-                            level2.getWallet().add(LEVEL2_REWARD)
-                    );
-
-                    userRepository.save(level2);
-
-                    walletService.recordTransaction(
-                            level2.getId(),
-                            LEVEL2_REWARD,
-                            "REFERRAL_LEVEL2",
-                            "Referral reward",
-                            user.getId()
-                    );
-                }
+                walletService.recordTransaction(
+                        level2.getId(),
+                        LEVEL2_REWARD,
+                        "REFERRAL_LEVEL2",
+                        "Referral reward",
+                        user.getId()
+                );
             }
         }
-
-        userRepository.save(user);
     }
 
     public String login(String email, String password) {

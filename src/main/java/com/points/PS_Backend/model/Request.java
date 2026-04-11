@@ -44,6 +44,8 @@ public class Request {
 
     private String paymentStatus;
 
+    private Long sourceProductId;
+
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
     private LocalDateTime completedTime;

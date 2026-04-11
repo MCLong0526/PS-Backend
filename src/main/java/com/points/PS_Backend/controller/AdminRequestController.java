@@ -121,6 +121,7 @@ public class AdminRequestController {
     @PutMapping("/{id}/ship")
     public ApiResponse shipProduct(
             @PathVariable Long id,
+            @RequestParam String trackingNumber,
             HttpServletRequest request){
 
         String token = extractToken(request);
@@ -138,6 +139,7 @@ public class AdminRequestController {
         }
 
         req.setStatus("SHIPPED");
+        req.setTrackingNumber(trackingNumber); // ✅ ADD THIS
         req.setUpdateTime(LocalDateTime.now());
 
         requestRepository.save(req);

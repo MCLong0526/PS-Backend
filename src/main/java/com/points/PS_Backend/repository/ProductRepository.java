@@ -14,6 +14,8 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
 
     Page<Product> findByStatus(String status, Pageable pageable);
 
+    Page<Product> findByStatusAndProductType(String status, String productType, Pageable pageable);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT p FROM Product p WHERE p.id = :id")
     Optional<Product> findProductForUpdate(Long id);

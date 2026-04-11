@@ -30,6 +30,9 @@ public class Product {
 
     private String status;
 
+    @Column(nullable = false)
+    private String productType = "NORMAL"; // 👈 ADD THIS
+
     @Transient
     private List<ProductImage> images;
 

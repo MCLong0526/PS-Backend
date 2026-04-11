@@ -32,6 +32,8 @@ public class WalletService {
         log.setRelatedUserId(relatedUserId);
         log.setCreateTime(LocalDateTime.now());
 
+        System.out.println("Recording wallet transaction: " + log);
+
         walletLogRepository.save(log);
     }
 

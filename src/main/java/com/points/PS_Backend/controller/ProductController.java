@@ -1,8 +1,12 @@
 package com.points.PS_Backend.controller;
 
 import com.points.PS_Backend.dto.ApiResponse;
+import com.points.PS_Backend.dto.LuckyDrawRequest;
 import com.points.PS_Backend.model.Product;
 import com.points.PS_Backend.model.Request;
+import com.points.PS_Backend.repository.LuckyDrawItemRepository;
+import com.points.PS_Backend.repository.ProductImageRepository;
+import com.points.PS_Backend.repository.ProductRepository;
 import com.points.PS_Backend.repository.RequestRepository;
 import com.points.PS_Backend.service.ProductService;
 import com.points.PS_Backend.utils.JwtUtil;
@@ -13,6 +17,7 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.File;
 import java.io.IOException;
 import java.time.LocalDateTime;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/products")
@@ -20,11 +25,20 @@ public class ProductController {
 
     private final ProductService productService;
     private final RequestRepository requestRepository;
+    private final LuckyDrawItemRepository luckyDrawItemRepository;
+    private final ProductRepository productRepository;
+    private final ProductImageRepository productImageRepository;
 
     public ProductController(ProductService productService,
-                             RequestRepository requestRepository) {
+                             RequestRepository requestRepository,
+                             LuckyDrawItemRepository luckyDrawItemRepository,
+                             ProductRepository productRepository,
+                             ProductImageRepository productImageRepository) {
         this.productService = productService;
         this.requestRepository = requestRepository;
+        this.luckyDrawItemRepository = luckyDrawItemRepository;
+        this.productRepository = productRepository;
+        this.productImageRepository = productImageRepository;
     }
 
     private String extractToken(HttpServletRequest request){
@@ -42,9 +56,16 @@ public class ProductController {
     @GetMapping
     public ApiResponse getProducts(
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "10") int size){
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(required = false) String productType){
 
-        var products = productService.getProducts(page,size);
+        if(productType != null &&
+                !"NORMAL".equals(productType) &&
+                !"LUCKY_DRAW".equals(productType)){
+            throw new RuntimeException("Invalid product type");
+        }
+
+        var products = productService.getProducts(page, size, productType);
 
         return new ApiResponse(
                 200,
@@ -204,4 +225,95 @@ public class ProductController {
         );
     }
 
+    @PostMapping("/lucky-draw")
+    public ApiResponse joinLuckyDraw(
+            @RequestBody LuckyDrawRequest dto,
+            HttpServletRequest request){
+
+        String token = extractToken(request);
+        Long userId = JwtUtil.getUserIdFromToken(token);
+
+        Request result = productService.joinLuckyDraw(
+                userId,
+                dto.getProductId(),
+                dto.getRedeemType()
+        );
+
+        return new ApiResponse(
+                200,
+                "Lucky draw success",
+                result,
+                null
+        );
+    }
+
+    @GetMapping("/lucky-draw/{productId}/items")
+    public ApiResponse getLuckyDrawItems(@PathVariable Long productId){
+
+        Product product = productService.getProductById(productId);
+
+        if(!"LUCKY_DRAW".equals(product.getProductType())){
+            throw new RuntimeException("This is not a lucky draw product");
+        }
+
+        var items = luckyDrawItemRepository.findByLuckyDrawProductId(productId);
+
+        var result = items.stream().map(item -> {
+
+            Product reward = productRepository.findById(item.getRewardProductId())
+                    .orElse(null);
+
+            String image = null;
+
+            if(reward != null){
+                var images = productImageRepository.findByProductId(reward.getId());
+
+                if(images != null && !images.isEmpty()){
+                    image = images.get(0).getImageUrl();
+                }
+            }
+
+            return Map.of(
+                    "id", item.getId(),
+                    "weight", item.getWeight(),
+                    "productId", reward != null ? reward.getId() : null,
+                    "name", reward != null ? reward.getName() : "Unknown Product",
+                    "image", image
+            );
+
+        }).toList();
+
+        return new ApiResponse(200, "success", result, null);
+    }
+
+
+    @GetMapping("/normal")
+    public ApiResponse getNormalProducts(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size){
+
+        var products = productService.getProducts(page, size, "NORMAL");
+
+        return new ApiResponse(
+                200,
+                "success",
+                products,
+                null
+        );
+    }
+
+    @GetMapping("/lucky-draw-list")
+    public ApiResponse getLuckyDrawProducts(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size){
+
+        var products = productService.getProducts(page, size, "LUCKY_DRAW");
+
+        return new ApiResponse(
+                200,
+                "success",
+                products,
+                null
+        );
+    }
 }
